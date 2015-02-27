@@ -2,6 +2,11 @@
 
 error_reporting(E_ALL & ~E_NOTICE);
 
+foreach (array('pdo','pdo_pgsql','pdo_mysql') as $ext) {
+    if (!extension_loaded($ext))
+        exit("extension {$ext} not supported!");
+}
+
 $mysql_dsn = 'mysql://username:password@server_ip:port/databasename';
 $pgsql_dsn = 'pgsql://username:password@server_ip:port/databasename';
 
