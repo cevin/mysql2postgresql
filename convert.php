@@ -87,16 +87,13 @@ try {
         // transfer data
         echo 'transfering data...';
         $data = $mysql->prepare('select * from '.$_t)->fetchAll(2);
-        if (!empty($data)) {
-            $sql = '';
-            foreach ($data as $row) {
-                $sql = '(';
-                foreach ($row as $key=>$val) {
-                    $sql .= (is_numeric($val) ? $val : "'{$val}'").',';
-                }
-                $sql = substr($sql,0,-1);
-                $sql .= '),';
+        while ($row = $mysql->prepare('select * from '.$_t)->fetch(2)) {
+            $sql = '(';
+            foreach ($row as $key=>$val) {
+                $sql .= (is_numeric($val) ? $val : "'{$val}'").',';
             }
+            $sql = substr($sql,0,-1);
+            $sql .= '),';
             $sql = "INSERT INTO {$_t} VALUES ".substr($sql,0,-1);
             $pgsql->prepare($sql);
         }
