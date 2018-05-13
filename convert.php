@@ -7,8 +7,8 @@ foreach (array('pdo','pdo_pgsql','pdo_mysql') as $ext) {
         exit("extension {$ext} not supported!");
 }
 
-$mysql_dsn = 'mysql://username:password@server_ip:port/databasename';
-$pgsql_dsn = 'pgsql://username:password@server_ip:port/databasename';
+$mysql_dsn = 'mysql://username:password@host:port/database_name';
+$pgsql_dsn = 'pgsql://username:password@host:port/database_name';
 
 $mysql = database::get_instance($mysql_dsn);
 $pgsql = database::get_instance($pgsql_dsn);
@@ -25,8 +25,6 @@ $mysql_tables = $mysql->prepare('show tables')->fetchAll(3);
 
 if (empty($mysql_tables))
     printl("MySQL tables empty.") && exit;
-
-sleep(2);
 
 printl(null);
 printl(null);
@@ -80,22 +78,25 @@ try {
         // create normal index
         foreach ($_ind as $name=>$columns) {
             $sql = "CREATE  INDEX \"{$_t}_{$name}\" ON \"public\".\"{$_t}\" USING btree(".'"'.implode('","',$columns).'"'.")";
+            
             $pgsql->prepare($sql);
         }
         printl('success');
 
         // transfer data
         echo 'transfering data...';
-        $data = $mysql->prepare('select * from '.$_t)->fetchAll(2);
-        while ($row = $mysql->prepare('select * from '.$_t)->fetch(2)) {
+        $stmt = $mysql->prepare('select * from '.$_t);
+        while ($row = $stmt->fetch(2)) {
+            $_params = [];
             $sql = '(';
             foreach ($row as $key=>$val) {
-                $sql .= (is_numeric($val) ? $val : "'{$val}'").',';
+                $sql .=  ":{$key},";
+                $_params[":{$key}"] = $val;
             }
             $sql = substr($sql,0,-1);
             $sql .= '),';
             $sql = "INSERT INTO {$_t} VALUES ".substr($sql,0,-1);
-            $pgsql->prepare($sql);
+            $pgsql->prepare($sql, $_params);
         }
         printl('success');
     }
@@ -105,7 +106,7 @@ try {
     printl('faield');
     line();
     printl('SQL');
-    printl(iconv('utf-8','gbk',$sql));
+    printl($sql);
     line();
     printl('Message');
     printl($e->getMessage());
@@ -173,6 +174,10 @@ class database {
         return $this->db->rollback();
     }
 
+    public function quote($str) {
+        return $this->db->quote($str);
+    }
+
 
     private function __clone() {
         //
@@ -214,22 +219,37 @@ function mysql_table_desc_convert(Array $tdesc) {
         sleep(2);
         $tdesc['Field'] = 'p'.$tdesc['Field'];
     }
-
     if ($tdesc['Extra'])
-        $type = 'bigserial';
+        $type = 'serial8';
     else if ('enum' === substr(strtolower($tdesc['Type']),0,4)) {
         $type = str_replace('enum','character varying check('.$tdesc['Field'].' in ', $from_type_str).')';
+    } else if ('timestamp' == $tdesc['Type']) {
+        $type = 'timestamp without time zone';
     }
     else {
         $from_type = substr($from_type_str,0,($length = stripos($from_type_str,'('))!==false ? $length : strlen($from_type_str)-1);
 
         $type = str_replace(
-            array('varchar','small','int','big','tiny','medium','blob','enum','float'),
-            array('character varying','','numeric','','','','bytea','character varying','numeric'),
+            array('varchar',          'int',    'smallint',    'integer',    'bigint','tinyint','medium','blob', 'float', 'double'),
+            array('character varying','integer','smallint',    'integer',    'bigint','integer','int4',  'bytea','numeric','numeric'),
             $from_type_str);
+        $type = preg_replace_callback('/\w+\(\d+\)/',function($match){
+            if (stripos($match[0],'integer')===0) {
+                return 'integer';
+            } else if (stripos($match[0],'smallint')===0) {
+                return 'smallint';
+            } else if (stripos($match[0],'bigint')===0) {
+                return 'bigint';
+            } else if (stripos($match[0],'int4')===0) {
+                return 'int4';
+            } else {
+                return $match[0];
+            }
+        },$type);
     }
 
     $default = $tdesc['Default'] ? 'DEFAULT '.(is_numeric($tdesc['Default']) ? $tdesc['Default'] : "'{$tdesc['Default']}'") : NULL;
 
     return ' "'.$tdesc['Field'].'"  '.$type.' '.$default.' '.$not_null." ,";
 }
+
